@@ -1,6 +1,6 @@
 ---
-title: 'AES Learning Note'
+title: 'Study Note - AES'
 tags: 'Cryptosystem Study Group'
 ---
-AES
-===
+# AES
+Learning AES
