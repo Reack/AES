@@ -42,29 +42,22 @@ void __covert_io_state(byte in[4*__NB],byte out[4*__NB]){
     }
 }
 
-void Cipher(byte in[4*__NB], byte out[4*__NB], word w[__NB*(__NR+1)]) {
-    byte *state = (byte*)calloc(4*__NB,sizeof(byte));
-    __covert_io_state(in,state);
-    // AddRoundKey(state, w[0, __NB-1]); // See Sec. 5.1.4
-    // for ( uint8_t round = 1; round <= __NR-1; round++ ) {
-    //     SubBytes(state); // See Sec. 5.1.1
-    //     ShiftRows(state); // See Sec. 5.1.2
-    //     MixColumns(state); // See Sec. 5.1.3
-    //     AddRoundKey(state, w[round*__NB, (round+1)*__NB-1]);
-    // }
-    // SubBytes(state);
-    // ShiftRows(state);
-    // AddRoundKey(state, w[__NR*__NB, (__NR+1)*__NB-1]);
-    __covert_io_state(state,out);
+byte __FFM(byte x, byte y) { // p(x) = x^8 + x^4 + X^3 + X + 1
+    byte result = 0;
+    for ( uint8_t i = 0x40; i > 0x1; i>>=1 ){
+        result = ( result ^ ( ( ( ( y & i ) ^ i ) + 0xFF ) & x ) ) << 1;
+        result = ( (! ( result & 0x80 ) ) & 0x1B ) ^ ( result & 0X7F ); 
+    }
+    return ( result ^ ( ( ( ( y & 0x01 ) ^ 0x01) + 0xFF ) & x ) );
 }
 
-uint8_t SubBytes(byte state[4*__NB]){
+void SubBytes(byte state[4*__NB]){
     for ( uint8_t i = 0; i < 4*__NB; i++ ) {
         state[i] = __sbox[state[i]];
     }
 }
 
-uint8_t ShiftRows(byte state[4*__NB]){
+void ShiftRows(byte state[4*__NB]){
     byte temp1;
     byte temp2;
     for ( uint8_t i = 0; i < 4; i++ ) {
@@ -79,10 +72,59 @@ uint8_t ShiftRows(byte state[4*__NB]){
     }
 }
 
-uint8_t MixColumns(byte state[4*__NB]) {
-    
+void MixColumns(byte state[4*__NB]) {
+    for ( uint8_t c = 0; c < 4; c++ ) {
+        state[c] = __FFM( 0x02, state[ c ] ) ^ __FFM( 0x03, state[ 4 + c ] ) ^ state[ 8 + c ] ^ state[ 12 + c ];
+        state[4+c] = state[ c ] ^ __FFM( 0x02, state[ 4 + c ]) ^ __FFM( 0x03, state[ 8 + c ] ) ^ state[ 12 + c ];
+        state[8+c] = state[ c ] ^ state[ 4 + c ] ^ __FFM( 0x02, state[ 8 + c ] ) ^ __FFM( 0x03, state[ 12 + c ] );
+        state[12+c] = __FFM( 0x03, state[ c ] )^state[ 4 + c ]^state[ 8 + c ]^ __FFM( 0x02, state[ 12 + c ] );
+    }
 }
 
-uint8_t AddRoundKey(byte state[4*__NB]) {
-    
+void AddRoundKey(byte state[4*__NB], word w[4]) {
+    for ( uint8_t round = 0; round < 4; round++ ) {
+        byte temp =  state[ round ] | ( state[ 4 + round ] << 4 ) | ( state[ 8 + round ] << 8 ) | ( state[ 12 + round ] << 12 );
+        temp = temp ^ w[round];
+        state[ round ] = temp & 0x0F;
+        state[ 4 + round ] = ( temp >> 4 ) & 0x0F;
+        state[ 8 + round ] = ( temp >> 8 ) & 0x0F;
+        state[ 12 + round ] = ( temp >> 12 ) & 0x0F;
+    }
+}
+
+void KeyExpansion(byte key[4*__NK], word w[__NB*(__NR+1)], uint8_t NK){
+    // uint8_t i = 0;
+    // while ( i < NK) {
+    //     w[i] = ( key[ 4 * i ] << 24 ) | ( key[ 4 * i + 1 ] << 16 ) | ( key[ 4 * i + 2 ] << 8 ) | key[ 4 * i + 3 ];
+    //     i+1;
+    // }
+
+    // i = NK;
+
+    // while ( i < __NB * ( __NR + 1 )){
+    //     word temp = w[ i - 1 ];
+    //     if ( i % NK == 0){
+    //         temp = SubWord( RotWord( temp ) ) ^ Rcon[ i / NK ];
+    //     } else if (NK > 6 && (i % NK == 4)){
+    //         temp = SubWord( temp );
+    //     }
+    //     w[ i ] = w[ i - NK ] ^ temp;
+    //     i++;
+    // }
+}
+
+void Cipher(byte in[4*__NB], byte out[4*__NB], word w[__NB*(__NR+1)]) {
+    byte *state = (byte*)calloc( 4 * __NB, sizeof(byte) );
+    __covert_io_state( in, state );
+    AddRoundKey( state, &w[ 0 ] ); // See Sec. 5.1.4
+    for ( uint8_t round = 1; round <= __NR-1; round++ ) {
+        SubBytes( state ); // See Sec. 5.1.1
+        ShiftRows( state ); // See Sec. 5.1.2
+        MixColumns( state ); // See Sec. 5.1.3
+        AddRoundKey( state, &w[ round*__NB ] );
+    }
+    SubBytes( state );
+    ShiftRows( state );
+    AddRoundKey( state, &w[ __NR*__NB ] );
+    __covert_io_state( state, out );
 }
