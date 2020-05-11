@@ -7,34 +7,38 @@
 extern  "C" {
 #endif 
 
-#ifndef __NB
-#define __NB 4
+#ifndef Nb
+#define Nb 4
 #endif
 
-#ifdef AES_FLAVIRO
-#if AES_FLAVIRO == 128
-#define __NR 10
-#define __NK 4
-#endif
+#ifndef AES_FLAVIRO
+#define AES_FLAVIRO 128
+#define Nr 10
+#define Nk 4
+#else 
 #if AES_FLAVIRO == 192
-#define __NR 12
-#define __NK 6
+#define Nr 12
+#define Nk 6
 #endif 
 #if AES_FLAVIRO == 256
-#define __NR 14
-#define __NK 8 
-#endif
-#define Nb 4
-#else 
-#define AES_FLAVIRO 128
-#define __NR 10
-#define __NK 4
+#define Nr 14
+#define Nk 8 
 #endif
 
+#endif
 
 typedef uint32_t word; 
 typedef uint8_t byte;
-void Cipher(byte in[4*__NB], byte out[4*__NB], word w[__NB*(__NR+1)]);
+extern void aes_initialize(char* cipherkey, word w[Nb*(Nr+1)]);
+extern void aes_cipher(byte in[4*Nb], byte out[4*Nb], word w[Nb*(Nr+1)]);
+
+static const struct {
+    void (* init)(char* cipherkey, word w[Nb*(Nr+1)]);
+    void (* cipher) (byte in[4*Nb], byte out[4*Nb], word w[Nb*(Nr+1)]);
+} AES = {
+    aes_initialize,
+    aes_cipher
+};
 
 #ifdef  __cplusplus
 }

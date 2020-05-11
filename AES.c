@@ -5,14 +5,10 @@
 
 #define ROTL8(x,shift) ((byte) ((x) << (shift)) | ((x) >> (8 - (shift))))
 
+byte sbox[256];
+word rcon[Nr+1];
 
-// void initialize_aes(){
-
-//     initialize_aes_sbox(sbox[256])
-// }
-byte __sbox[256];
-
-void __initialize_aes_sbox(byte sbox[256]) {
+void aes_initialize_sbox(byte sbox[256]) {
 	byte p = 1, q = 1;
 	
 	/* loop invariant: p * q == 1 in the Galois field */
@@ -35,29 +31,58 @@ void __initialize_aes_sbox(byte sbox[256]) {
 	/* 0 is a special case since it has no inverse */
 	sbox[0] = 0x63;
 }
-
-void __covert_io_state(byte in[4*__NB],byte out[4*__NB]){
-    for ( uint8_t i = 0; i < 4*__NB; i++) {
+void aes_covert_io_state(byte in[4*Nb],byte out[4*Nb]){
+    for ( uint8_t i = 0; i < 4*Nb; i++) {
         out[i] = in[( ( i * 4 ) % 16 ) + ( i / 4 )];
     }
 }
 
-byte __FFM(byte x, byte y) { // p(x) = x^8 + x^4 + X^3 + X + 1
+byte aes_FFM(byte x, byte y) { // p(x) = x^8 + x^4 + X^3 + X + 1
     byte result = 0;
     for ( uint8_t i = 0x40; i > 0x1; i>>=1 ){
         result = ( result ^ ( ( ( ( y & i ) ^ i ) + 0xFF ) & x ) ) << 1;
-        result = ( (! ( result & 0x80 ) ) & 0x1B ) ^ ( result & 0X7F ); 
+        result = ( ( ~( result & 0x80 ) ) & 0x1B ) ^ ( result & 0X7F ); 
     }
     return ( result ^ ( ( ( ( y & 0x01 ) ^ 0x01) + 0xFF ) & x ) );
 }
 
-void SubBytes(byte state[4*__NB]){
-    for ( uint8_t i = 0; i < 4*__NB; i++ ) {
-        state[i] = __sbox[state[i]];
+void aes_initialize_rcon(word rcon[Nr+1]) {
+    rcon[0] = 1<<24;
+    for ( uint8_t i = 1; i <  Nr+1; i++) {
+        uint8_t ge = rcon[i-1] >> 24;
+        ge = ( ge << 1 ) ^ ( ( !( ge & 0x80 ) + 0xFF ) & 0x1B );
+        rcon[i] = ge << 24;
     }
 }
 
-void ShiftRows(byte state[4*__NB]){
+void ckey2bkey(char* cipherkey, byte key[4*Nk]){
+    // byte* key = (byte*)calloc(Nk*4,sizeof(byte));
+    char* temp = cipherkey;
+    for(int i = 0; *temp; i++) {
+        key[i] = (word)strtol(temp,&temp,16);
+    }
+}
+
+void SubBytes(byte state[4*Nb]){
+    for ( uint8_t i = 0; i < 4*Nb; i++ ) {
+        state[i] = sbox[state[i]];
+    }
+}
+
+word SubWord(word w) {
+    for ( uint8_t i = 0; i < 4; i++) {
+        word ofset = i << 3;
+        word mask = 0xff<<ofset;
+        w = ( w & ( ~mask ) ) | ( sbox[ (byte)( ( w & ( mask ) ) >> ofset ) ] << ofset);
+    }
+    return w;
+}
+
+word RotWord(word w) {
+    return ( w << 8 ) | ( ( w & 0xFF000000 ) >> 24 );
+}
+
+void ShiftRows(byte state[4*Nb]){
     byte temp1;
     byte temp2;
     for ( uint8_t i = 0; i < 4; i++ ) {
@@ -72,16 +97,16 @@ void ShiftRows(byte state[4*__NB]){
     }
 }
 
-void MixColumns(byte state[4*__NB]) {
+void MixColumns(byte state[4*Nb]) {
     for ( uint8_t c = 0; c < 4; c++ ) {
-        state[c] = __FFM( 0x02, state[ c ] ) ^ __FFM( 0x03, state[ 4 + c ] ) ^ state[ 8 + c ] ^ state[ 12 + c ];
-        state[4+c] = state[ c ] ^ __FFM( 0x02, state[ 4 + c ]) ^ __FFM( 0x03, state[ 8 + c ] ) ^ state[ 12 + c ];
-        state[8+c] = state[ c ] ^ state[ 4 + c ] ^ __FFM( 0x02, state[ 8 + c ] ) ^ __FFM( 0x03, state[ 12 + c ] );
-        state[12+c] = __FFM( 0x03, state[ c ] )^state[ 4 + c ]^state[ 8 + c ]^ __FFM( 0x02, state[ 12 + c ] );
+        state[c] = aes_FFM( 0x02, state[ c ] ) ^ aes_FFM( 0x03, state[ 4 + c ] ) ^ state[ 8 + c ] ^ state[ 12 + c ];
+        state[4+c] = state[ c ] ^ aes_FFM( 0x02, state[ 4 + c ]) ^ aes_FFM( 0x03, state[ 8 + c ] ) ^ state[ 12 + c ];
+        state[8+c] = state[ c ] ^ state[ 4 + c ] ^ aes_FFM( 0x02, state[ 8 + c ] ) ^ aes_FFM( 0x03, state[ 12 + c ] );
+        state[12+c] = aes_FFM( 0x03, state[ c ] )^state[ 4 + c ]^state[ 8 + c ]^ aes_FFM( 0x02, state[ 12 + c ] );
     }
 }
 
-void AddRoundKey(byte state[4*__NB], word w[4]) {
+void AddRoundKey(byte state[4*Nb], word w[4]) {
     for ( uint8_t round = 0; round < 4; round++ ) {
         byte temp =  state[ round ] | ( state[ 4 + round ] << 4 ) | ( state[ 8 + round ] << 8 ) | ( state[ 12 + round ] << 12 );
         temp = temp ^ w[round];
@@ -92,39 +117,52 @@ void AddRoundKey(byte state[4*__NB], word w[4]) {
     }
 }
 
-void KeyExpansion(byte key[4*__NK], word w[__NB*(__NR+1)], uint8_t NK){
-    // uint8_t i = 0;
-    // while ( i < NK) {
-    //     w[i] = ( key[ 4 * i ] << 24 ) | ( key[ 4 * i + 1 ] << 16 ) | ( key[ 4 * i + 2 ] << 8 ) | key[ 4 * i + 3 ];
-    //     i+1;
-    // }
+void KeyExpansion(byte key[4*Nk], word w[Nb*(Nr+1)], uint8_t NK){
+    uint8_t i = 0;
+    while ( i < NK) {
+        w[i] = ( key[ 4 * i ] << 24 ) | ( key[ 4 * i + 1 ] << 16 ) | ( key[ 4 * i + 2 ] << 8 ) | key[ 4 * i + 3 ];
+        i++;
+    }
 
-    // i = NK;
+    i = NK;
 
-    // while ( i < __NB * ( __NR + 1 )){
-    //     word temp = w[ i - 1 ];
-    //     if ( i % NK == 0){
-    //         temp = SubWord( RotWord( temp ) ) ^ Rcon[ i / NK ];
-    //     } else if (NK > 6 && (i % NK == 4)){
-    //         temp = SubWord( temp );
-    //     }
-    //     w[ i ] = w[ i - NK ] ^ temp;
-    //     i++;
-    // }
+    while ( i < Nb * ( Nr + 1 )){
+        word temp = w[ i - 1 ];
+        if ( i % NK == 0){
+            printf("RotWord( temp ): %.8X\n",RotWord( temp ));
+            printf("SubWord( temp ): %.8X\n",SubWord( RotWord( temp ) ));
+            temp = SubWord( RotWord( temp ) ) ^ rcon[ (i / NK) - 1];
+            // printf("temp: %.8X\n",temp);
+        } else if (NK > 6 && (i % NK == 4)){
+            temp = SubWord( temp );
+        }
+            printf("w[ i - NK ]: %.8X\n",w[ i - NK ]);
+            printf("temp: %.8X\n",temp);
+        w[ i ] = w[ i - NK ] ^ temp;
+        i++;
+    }
 }
 
-void Cipher(byte in[4*__NB], byte out[4*__NB], word w[__NB*(__NR+1)]) {
-    byte *state = (byte*)calloc( 4 * __NB, sizeof(byte) );
-    __covert_io_state( in, state );
+void aes_initialize(char* cipherkey, word w[Nb*(Nr+1)]){
+    aes_initialize_sbox(sbox);
+    aes_initialize_rcon(rcon);
+    byte key[4*Nk] = {0};
+    ckey2bkey(cipherkey,key);
+    KeyExpansion(key,w,Nk);
+}
+
+void aes_cipher(byte in[4*Nb], byte out[4*Nb], word w[Nb*(Nr+1)]) {
+    byte *state = (byte*)calloc( 4 * Nb, sizeof(byte) );
+    aes_covert_io_state( in, state );
     AddRoundKey( state, &w[ 0 ] ); // See Sec. 5.1.4
-    for ( uint8_t round = 1; round <= __NR-1; round++ ) {
+    for ( uint8_t round = 1; round <= Nr-1; round++ ) {
         SubBytes( state ); // See Sec. 5.1.1
         ShiftRows( state ); // See Sec. 5.1.2
         MixColumns( state ); // See Sec. 5.1.3
-        AddRoundKey( state, &w[ round*__NB ] );
+        AddRoundKey( state, &w[ round*Nb ] );
     }
     SubBytes( state );
     ShiftRows( state );
-    AddRoundKey( state, &w[ __NR*__NB ] );
-    __covert_io_state( state, out );
+    AddRoundKey( state, &w[ Nr*Nb ] );
+    aes_covert_io_state( state, out );
 }
