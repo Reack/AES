@@ -31,14 +31,7 @@ typedef uint32_t word;
 typedef uint8_t byte;
 extern void aes_initialize(char* cipherkey, word w[Nb*(Nr+1)]);
 extern void aes_cipher(byte in[4*Nb], byte out[4*Nb], word w[Nb*(Nr+1)]);
-
-static const struct {
-    void (* init)(char* cipherkey, word w[Nb*(Nr+1)]);
-    void (* cipher) (byte in[4*Nb], byte out[4*Nb], word w[Nb*(Nr+1)]);
-} AES = {
-    aes_initialize,
-    aes_cipher
-};
+extern void aes_inv_cipher(byte in[4*Nb], byte out[4*Nb], word w[Nb*(Nr+1)]);
 
 #ifdef  __cplusplus
 }
