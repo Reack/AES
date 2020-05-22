@@ -3,20 +3,18 @@
 #include <stdint.h>
 #include "AES.h"
 
-byte* charPtr2wordPtr(char* CipherKey){
-    byte* key = (byte*)calloc(Nk*4,sizeof(byte));
-    char* temp =CipherKey;
-    for(int i = 0; *temp; i++) {
-        key[i] = (word)strtol(temp,&temp,16);
+void printf_block(byte b[4*Nb]){
+    for(int i = 0; i < 4 * Nb;){
+        printf("%.2X ",b[i/4*4+i%4]);
+        if((++i % 4)==0) printf("\n"); 
     }
-    return key;
+    printf("\n");
 }
 
 int main(int argc, char *argv[]) {
     char* CipherKey = "2b 7e 15 16 28 ae d2 a6 ab f7 15 88 09 cf 4f 3c";
-    charPtr2wordPtr(CipherKey);
     word w[Nb*(Nr+1)] = {0};
-    aes_initialize(CipherKey,w);
+    AES_Initialize(CipherKey,w);
 
     byte in[4*Nb] = { 
         0x32, 0x43, 0xF6, 0xA8, 
@@ -25,7 +23,19 @@ int main(int argc, char *argv[]) {
         0xE0, 0x37, 0x07, 0x34
     };
 
+    printf("Plaintext:\n");
+    printf_block(in);
+
     byte out[4*Nb] = { 0 };
-    aes_cipher(in, out, w);
+    AES_Cipher(in, out, w);
+    
+    printf("ciphertext:\n");
+    printf_block(out);
+
+    byte Plaintext[4*Nb] = { 0 };
+    AES_InvCipher(out, Plaintext, w);
+    
+    printf("Plaintext:\n");
+    printf_block(Plaintext);
     return 0;
 }
